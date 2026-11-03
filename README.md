@@ -47,23 +47,28 @@ tidak disimpan di STB, dan controller LuCI tidak memprosesnya.
 Contoh hasil:
 
 ```yaml
-  - name: 🚀 Vmess-1
-    type: vmess
-    server: example.com
-    port: 443
-    uuid: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    alterId: 0
-    cipher: auto
-    udp: true
-    skip-cert-verify: true
-    tls: true
-    servername: example.com
-    network: ws
-    ws-opts:
-      path: /path
-      headers:
-        Host: example.com
+proxies:
+- name: 🚀 Vmess-1
+  type: vmess
+  server: example.com
+  port: 443
+  uuid: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  alterId: 0
+  cipher: auto
+  udp: true
+  skip-cert-verify: true
+  tls: true
+  servername: example.com
+  network: ws
+  ws-opts:
+    path: /path
+    headers:
+      Host: example.com
 ```
+
+Di atas adalah tampilan setelah ditempel di bawah `proxies:`.
+Hasil dari tool-nya sendiri hanya daftarnya (tanpa baris `proxies:`),
+dengan indentasi yang sama: dash di kolom 0, field 2 spasi.
 
 ## Install di STB (dari GitHub, repo harus sudah di-push & Public)
 

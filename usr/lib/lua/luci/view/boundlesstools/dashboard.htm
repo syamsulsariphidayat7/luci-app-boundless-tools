@@ -215,45 +215,45 @@ function btTransport(lines, o, warnings) {
 	if (net === "websocket") net = "ws";
 	if (net === "tcp" || net === "") return;
 	if (net === "httpupgrade") {
-		lines.push("    network: ws");
-		lines.push("    ws-opts:");
-		lines.push("      path: " + btYaml(o.path || "/"));
-		lines.push("      v2ray-http-upgrade: true");
+		lines.push("  network: ws");
+		lines.push("  ws-opts:");
+		lines.push("    path: " + btYaml(o.path || "/"));
+		lines.push("    v2ray-http-upgrade: true");
 		if (o.host) {
-			lines.push("      headers:");
-			lines.push("        Host: " + btYaml(o.host));
+			lines.push("    headers:");
+			lines.push("      Host: " + btYaml(o.host));
 		}
 		return;
 	}
 	if (net === "ws") {
-		lines.push("    network: ws");
-		lines.push("    ws-opts:");
-		lines.push("      path: " + btYaml(o.path || "/"));
+		lines.push("  network: ws");
+		lines.push("  ws-opts:");
+		lines.push("    path: " + btYaml(o.path || "/"));
 		if (o.host) {
-			lines.push("      headers:");
-			lines.push("        Host: " + btYaml(o.host));
+			lines.push("    headers:");
+			lines.push("      Host: " + btYaml(o.host));
 		}
 		return;
 	}
 	if (net === "grpc") {
-		lines.push("    network: grpc");
+		lines.push("  network: grpc");
 		if (o.serviceName) {
-			lines.push("    grpc-opts:");
-			lines.push("      grpc-service-name: " + btYaml(o.serviceName));
+			lines.push("  grpc-opts:");
+			lines.push("    grpc-service-name: " + btYaml(o.serviceName));
 		}
 		return;
 	}
 	if (net === "h2" || net === "http") {
-		lines.push("    network: h2");
-		lines.push("    h2-opts:");
-		if (o.path) lines.push("      path: " + btYaml(o.path));
+		lines.push("  network: h2");
+		lines.push("  h2-opts:");
+		if (o.path) lines.push("    path: " + btYaml(o.path));
 		if (o.host) {
-			lines.push("      host:");
-			lines.push("        - " + btYaml(o.host));
+			lines.push("    host:");
+			lines.push("      - " + btYaml(o.host));
 		}
 		return;
 	}
-	lines.push("    network: " + btYaml(net));
+	lines.push("  network: " + btYaml(net));
 	warnings.push("transport '" + net + "' diteruskan apa adanya (tanpa opts)");
 }
 
@@ -261,16 +261,16 @@ function btAlpn(lines, alpn) {
 	if (!alpn) return;
 	var parts = String(alpn).split(",").map(function (x) { return x.trim(); }).filter(Boolean);
 	if (!parts.length) return;
-	lines.push("    alpn:");
-	parts.forEach(function (p) { lines.push("      - " + btYaml(p)); });
+	lines.push("  alpn:");
+	parts.forEach(function (p) { lines.push("    - " + btYaml(p)); });
 }
 
 function btReality(lines, q) {
 	var pbk = q.pbk || q["public-key"] || "";
 	if (!pbk) return;
-	lines.push("    reality-opts:");
-	lines.push("      public-key: " + btYaml(pbk));
-	if (q.sid || q["short-id"]) lines.push("      short-id: " + btYaml(q.sid || q["short-id"]));
+	lines.push("  reality-opts:");
+	lines.push("    public-key: " + btYaml(pbk));
+	if (q.sid || q["short-id"]) lines.push("    short-id: " + btYaml(q.sid || q["short-id"]));
 }
 
 function btConvertVmess(line, warnings) {
@@ -287,20 +287,20 @@ function btConvertVmess(line, warnings) {
 	var host = j.host || "";
 	var name = j.ps || "";
 	var lines = [];
-	lines.push("  - name: " + btYaml(name || ("Vmess-" + server + "-" + port)));
-	lines.push("    type: vmess");
-	lines.push("    server: " + btYaml(server));
-	lines.push("    port: " + port);
-	lines.push("    uuid: " + btYaml(j.id));
-	lines.push("    alterId: " + (parseInt(j.aid, 10) || 0));
-	lines.push("    cipher: " + btYaml(j.scy || "auto"));
-	lines.push("    udp: true");
-	lines.push("    skip-cert-verify: true");
+	lines.push("- name: " + btYaml(name || ("Vmess-" + server + "-" + port)));
+	lines.push("  type: vmess");
+	lines.push("  server: " + btYaml(server));
+	lines.push("  port: " + port);
+	lines.push("  uuid: " + btYaml(j.id));
+	lines.push("  alterId: " + (parseInt(j.aid, 10) || 0));
+	lines.push("  cipher: " + btYaml(j.scy || "auto"));
+	lines.push("  udp: true");
+	lines.push("  skip-cert-verify: true");
 	if (isTls) {
-		lines.push("    tls: true");
-		lines.push("    servername: " + btYaml(j.sni || host || server));
+		lines.push("  tls: true");
+		lines.push("  servername: " + btYaml(j.sni || host || server));
 	}
-	if (j.fp) lines.push("    client-fingerprint: " + btYaml(j.fp));
+	if (j.fp) lines.push("  client-fingerprint: " + btYaml(j.fp));
 	btAlpn(lines, j.alpn);
 	btTransport(lines, {
 		network: j.net || "tcp",
@@ -329,33 +329,33 @@ function btConvertUri(line, warnings) {
 	else if (security) isTls = security !== "none";
 	else isTls = (proto === "trojan"); // trojan bawaan TLS; vless bawaan nonTLS
 	var lines = [];
-	lines.push("  - name: " + btYaml(name));
-	lines.push("    type: " + proto);
-	lines.push("    server: " + btYaml(u.server));
-	lines.push("    port: " + port);
+	lines.push("- name: " + btYaml(name));
+	lines.push("  type: " + proto);
+	lines.push("  server: " + btYaml(u.server));
+	lines.push("  port: " + port);
 	if (proto === "vless") {
 		if (!u.userinfo) throw new Error("vless: uuid kosong");
-		lines.push("    uuid: " + btYaml(u.userinfo));
-		if (q.flow) lines.push("    flow: " + btYaml(q.flow));
+		lines.push("  uuid: " + btYaml(u.userinfo));
+		if (q.flow) lines.push("  flow: " + btYaml(q.flow));
 	} else {
 		if (!u.userinfo) throw new Error("trojan: password kosong");
-		lines.push("    password: " + btYaml(u.userinfo));
+		lines.push("  password: " + btYaml(u.userinfo));
 	}
-	lines.push("    udp: true");
-	lines.push("    skip-cert-verify: true");
+	lines.push("  udp: true");
+	lines.push("  skip-cert-verify: true");
 	if (proto === "vless") {
 		if (isTls || isReality) {
-			lines.push("    tls: true");
-			lines.push("    servername: " + btYaml(q.sni || host || u.server));
+			lines.push("  tls: true");
+			lines.push("  servername: " + btYaml(q.sni || host || u.server));
 		}
 	} else {
 		// Mihomo trojan tidak punya field tls: TLS ditandai lewat sni.
 		// nonTLS -> sni dihilangkan.
 		if (isTls || isReality) {
-			lines.push("    sni: " + btYaml(q.sni || q.peer || host || u.server));
+			lines.push("  sni: " + btYaml(q.sni || q.peer || host || u.server));
 		}
 	}
-	if (q.fp) lines.push("    client-fingerprint: " + btYaml(q.fp));
+	if (q.fp) lines.push("  client-fingerprint: " + btYaml(q.fp));
 	if (isReality) btReality(lines, q);
 	btAlpn(lines, q.alpn);
 	btTransport(lines, {
@@ -386,8 +386,8 @@ function btConvertAll(text) {
 			while (used[nm]) { nm = base + "-" + n; n++; }
 			used[nm] = true;
 			if (nm !== r.name) {
-				r.yaml = r.yaml.replace(/^  - name: .*$/m,
-					"  - name: " + btYaml(nm));
+				r.yaml = r.yaml.replace(/^- name: .*$/m,
+					"- name: " + btYaml(nm));
 			}
 			out.push(r.yaml);
 		} catch (e) {
