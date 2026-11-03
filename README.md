@@ -4,7 +4,17 @@
 Satu aplikasi, banyak tool; tool baru cukup ditambah sebagai kartu baru
 di halaman yang sama, bukan aplikasi baru.
 
-Menu: **Services → Boundless Tools**
+Menu: **Services → Boundless Tools** (halaman lebar penuh, gaya halaman LuCI biasa)
+
+Halaman utama berisi **tab-tab tool**: klik tab, panel tool-nya muncul
+di bawah tab. Tool baru cukup ditambah sebagai satu tab + satu panel
+baru. Untuk sekarang tabnya: **Convert V2Ray** dan **Tool Lainnya · Segera**
+(penampung tool berikutnya).
+
+Di bawah panel tool ada kartu **Versi & Update**: menampilkan versi
+terpasang, tombol Cek Update (membandingkan dengan tag rilis terbaru
+di GitHub), dan tombol Update Sekarang yang memasang rilis terbaru
+otomatis sambil menampilkan log prosesnya.
 
 ## Tool v1: Convert V2Ray
 
@@ -80,6 +90,13 @@ scp -r luci-app-boundless-tools root@192.168.1.1:/tmp/
 ssh root@192.168.1.1 'cd /tmp/luci-app-boundless-tools && sh install.sh'
 ```
 
+## Update
+
+Cara termudah: dari dashboard LuCI aplikasi ini sendiri — kartu
+**Versi & Update** → Cek Update → Update Sekarang.
+Jalur curl di atas juga tetap bekerja (installer online selalu
+mengambil rilis terbaru).
+
 ## Copot dari STB
 
 Online (STB bersih langsung dari repo):
@@ -110,11 +127,15 @@ Struktur:
 
 ```
 etc/config/boundlesstools                  penanda terpasang
-usr/lib/lua/luci/controller/boundlesstools.lua   menu saja (tipis)
-usr/lib/lua/luci/view/boundlesstools/dashboard.htm   halaman + converter (JS)
+usr/lib/lua/luci/controller/boundlesstools.lua   menu + endpoint Versi & Update
+usr/lib/lua/luci/view/boundlesstools/dashboard.htm   tab tool + panel + converter (JS)
 install.sh / uninstall.sh                  pasang/copot lokal di STB
 online-install.sh / online-uninstall.sh    pasang/copot via curl dari GitHub
 VERSION                                    versi aplikasi
 ```
+
+Catatan pengembang: tombol tab memakai atribut `data-stab`, JANGAN
+pernah `data-tab` — LuCI 24.10 otomatis menyuntikkan tabmenu-nya
+sendiri untuk atribut itu (muncul sebagai pil/oval kosong di tema).
 
 Versi: lihat file `VERSION`.

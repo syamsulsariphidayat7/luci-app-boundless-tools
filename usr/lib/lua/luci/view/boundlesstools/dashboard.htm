@@ -24,7 +24,15 @@
 	end
 %>
 <style>
-	.bt-wrap { --bt-g1: <%=g1%>; --bt-g2: <%=g2%>; max-width: 980px; margin: 0 auto; }
+	.bt-wrap { --bt-g1: <%=g1%>; --bt-g2: <%=g2%>; max-width: 100%; }
+	.bt-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+	.bt-tab { border: 1px solid rgba(127,127,127,.45); background: transparent; color: inherit;
+		border-radius: 999px; padding: 9px 18px; cursor: pointer; font-weight: 600; }
+	.bt-tab.bt-active { background: linear-gradient(135deg, var(--bt-g1), var(--bt-g2)); color: #fff;
+		border: 1px solid rgba(0,0,0,.35); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+	.bt-pre { display: none; white-space: pre-wrap; word-break: break-all; max-height: 300px;
+		overflow: auto; font-family: monospace; font-size: 12px; line-height: 1.5;
+		border-radius: 10px; padding: 10px; background: rgba(0,0,0,.07); }
 	.bt-hero { background: linear-gradient(135deg, var(--bt-g1), var(--bt-g2)); color: #fff;
 		border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; }
 	.bt-hero h2 { margin: 0 0 4px; color: #fff; border: none; }
@@ -49,10 +57,15 @@
 <div class="bt-wrap">
 	<div class="bt-hero">
 		<h2>Boundless Tools</h2>
-		<p>Kumpulan tools kecil. Tool pertama: Convert V2Ray.</p>
+		<p>Kumpulan tools kecil — pilih tool-nya dari tab di bawah, panel tool akan muncul di bawah tab.</p>
 	</div>
 
-	<div class="bt-card" id="tool-v2ray">
+	<div class="bt-tabs">
+		<button type="button" class="bt-tab bt-active" data-stab="v2ray">Convert V2Ray</button>
+		<button type="button" class="bt-tab" data-stab="segera">Tool Lainnya · Segera</button>
+	</div>
+
+	<div class="bt-card bt-panel" data-panel="v2ray" id="tool-v2ray">
 		<h3>Convert V2Ray &rarr; Clash / Mihomo</h3>
 		<p>
 			<span class="bt-badge">vmess</span><span class="bt-badge">vless</span><span class="bt-badge">trojan</span>
@@ -85,6 +98,25 @@
 		</div>
 		<p class="bt-note">Baris yang rusak ditandai nomor barisnya dan dilewati — baris lain tetap dikonversi.
 		Nama kosong diisi otomatis dari server:port, nama ganda diberi akhiran -2, -3, dst.</p>
+	</div>
+
+	<div class="bt-card bt-panel" data-panel="segera" style="display:none">
+		<h3>Tool Lainnya</h3>
+		<p class="bt-note">Belum ada tool kedua. Tool berikutnya akan ditambah sebagai tab baru
+		di atas dan panelnya muncul di area ini — satu aplikasi, tidak perlu install aplikasi baru.</p>
+	</div>
+
+	<div class="bt-card" id="tool-update">
+		<h3>Versi &amp; Update</h3>
+		<p>Versi terpasang: <strong id="bt-ver">Memuat...</strong></p>
+		<div class="bt-row">
+			<button type="button" class="bt-btn" id="bt-check">Cek Update</button>
+			<button type="button" class="bt-btn" id="bt-do-update" style="display:none">Update Sekarang</button>
+		</div>
+		<div class="bt-status" id="bt-upd-status"></div>
+		<pre class="bt-pre" id="bt-upd-log"></pre>
+		<p class="bt-note">Update mengambil rilis terbaru dari GitHub dan memasangnya otomatis.
+		Halaman bisa terputus sebentar saat uhttpd restart — itu normal, tunggu lalu refresh.</p>
 	</div>
 </div>
 
@@ -424,6 +456,118 @@ function btConvertAll(text) {
 		document.body.appendChild(a); a.click();
 		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
 	});
+})();
+</script>
+
+<script type="text/javascript">
+// Tab tool: klik tab (atribut data-stab, BUKAN data-tab) ->
+// panel tool yang sesuai muncul di bawah, panel lain disembunyikan.
+// Tool baru nanti cukup: 1 tombol .bt-tab + 1 panel .bt-panel.
+(function () {
+	var tabs = document.querySelectorAll(".bt-tab");
+	var panels = document.querySelectorAll(".bt-panel");
+	tabs.forEach(function (tab) {
+		tab.addEventListener("click", function () {
+			var target = tab.getAttribute("data-stab");
+			tabs.forEach(function (t) { t.classList.toggle("bt-active", t === tab); });
+			panels.forEach(function (p) {
+				p.style.display = (p.getAttribute("data-panel") === target) ? "" : "none";
+			});
+		});
+	});
+})();
+</script>
+
+<script type="text/javascript">
+// Versi & Update: bicara ke endpoint controller boundlesstools.
+(function () {
+	var BT_TOKEN = "<%=token%>";
+	var base = window.location.pathname.replace(/\/+$/, "");
+	var elVer = document.getElementById("bt-ver");
+	var elStat = document.getElementById("bt-upd-status");
+	var elLog = document.getElementById("bt-upd-log");
+	var btnCheck = document.getElementById("bt-check");
+	var btnUpdate = document.getElementById("bt-do-update");
+	var polling = null;
+
+	function getJson(path) {
+		return fetch(base + path, { credentials: "same-origin" }).then(function (r) {
+			return r.json().catch(function () { return { ok: false, error: "Respons tidak valid (" + r.status + ")" }; });
+		});
+	}
+	function loadVersion() {
+		getJson("/version").then(function (d) {
+			elVer.textContent = (d && d.ok) ? ("v" + d.installed) : "?";
+		}).catch(function () { elVer.textContent = "?"; });
+	}
+	function stopPoll() { if (polling) { clearInterval(polling); polling = null; } }
+	function pollLog() {
+		stopPoll();
+		var tries = 0;
+		polling = setInterval(function () {
+			tries++;
+			getJson("/updatelog").then(function (d) {
+				if (d && d.log) { elLog.style.display = "block"; elLog.textContent = d.log; }
+				if (d && d.rc !== null && d.rc !== undefined) {
+					stopPoll();
+					if (d.rc === 0) {
+						elStat.textContent = "Update selesai. Refresh halaman (Ctrl+F5).";
+						loadVersion();
+					} else {
+						elStat.textContent = "Update gagal (kode " + d.rc + "). Lihat log di atas.";
+					}
+					btnUpdate.style.display = "none";
+				} else if (tries > 90) {
+					stopPoll();
+					elStat.textContent = "Polling dihentikan. Cek lagi sebentar, lalu refresh halaman.";
+				}
+			}).catch(function () {
+				// uhttpd restart di tengah update: fetch gagal sesaat, tetap polling.
+				if (tries > 90) { stopPoll(); elStat.textContent = "Koneksi terputus terlalu lama. Refresh halaman."; }
+			});
+		}, 2000);
+	}
+
+	btnCheck.addEventListener("click", function () {
+		elStat.textContent = "Mengecek ke GitHub...";
+		btnUpdate.style.display = "none";
+		getJson("/check").then(function (d) {
+			if (!d || !d.ok) {
+				elStat.textContent = (d && d.error) || "Gagal mengecek update.";
+				return;
+			}
+			elVer.textContent = "v" + d.installed;
+			if (d.update_available) {
+				elStat.textContent = "Ada update: " + d.latest + " (terpasang v" + d.installed + ").";
+				btnUpdate.style.display = "";
+			} else {
+				elStat.textContent = "Sudah versi terbaru (" + d.latest + ").";
+			}
+		}).catch(function () { elStat.textContent = "Gagal mengecek update (jaringan?)."; });
+	});
+
+	btnUpdate.addEventListener("click", function () {
+		btnUpdate.style.display = "none";
+		elStat.textContent = "Update dimulai...";
+		elLog.style.display = "block"; elLog.textContent = "";
+		var body = new URLSearchParams();
+		body.set("token", BT_TOKEN);
+		fetch(base + "/update", {
+			method: "POST", credentials: "same-origin",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: body.toString()
+		}).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+		.then(function (d) {
+			if (!d || !d.ok) {
+				elStat.textContent = (d && d.error) || "Update tidak bisa dimulai.";
+				return;
+			}
+			elStat.textContent = "Mengupdate ke " + d.latest + "...";
+			pollLog();
+		}).catch(function () { elStat.textContent = "Gagal memulai update."; });
+	});
+
+	loadVersion();
 })();
 </script>
 <%+footer%>
