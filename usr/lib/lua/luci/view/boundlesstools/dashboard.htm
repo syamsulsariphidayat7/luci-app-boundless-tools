@@ -1,0 +1,429 @@
+<%+header%>
+<%
+	-- Ikuti gradien skema tema Boundless yang sedang aktif
+	-- (UCI boundlesstheme.settings.scheme), fallback ke skema bawaan.
+	local uci = require "luci.model.uci".cursor()
+	local g1, g2 = "#29445e", "#89253e"
+	local schemes = {
+		["bawaan"]       = { "#29445e", "#89253e" },
+		["pun-yeta"]     = { "#0b486b", "#ef8e38" },
+		["sand-to-blue"] = { "#3e5151", "#decba4" },
+		["purplepine"]   = { "#20002c", "#cbb4d4" },
+		["deep-space"]   = { "#000000", "#434343" },
+	}
+	local function valid_hex(v, fb)
+		if v and v:match("^#%x%x%x%x%x%x$") then return v:lower() end
+		return fb
+	end
+	local scheme = uci:get("boundlesstheme", "settings", "scheme")
+	if scheme == "custom" then
+		g1 = valid_hex(uci:get("boundlesstheme", "settings", "custom_c1"), g1)
+		g2 = valid_hex(uci:get("boundlesstheme", "settings", "custom_c2"), g2)
+	elseif scheme and schemes[scheme] then
+		g1, g2 = schemes[scheme][1], schemes[scheme][2]
+	end
+%>
+<style>
+	.bt-wrap { --bt-g1: <%=g1%>; --bt-g2: <%=g2%>; max-width: 980px; margin: 0 auto; }
+	.bt-hero { background: linear-gradient(135deg, var(--bt-g1), var(--bt-g2)); color: #fff;
+		border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; }
+	.bt-hero h2 { margin: 0 0 4px; color: #fff; border: none; }
+	.bt-hero p { margin: 0; opacity: .88; }
+	.bt-card { border: 1px solid rgba(127,127,127,.25); border-radius: 14px;
+		padding: 18px; margin-bottom: 16px; background: rgba(127,127,127,.05); }
+	.bt-card h3 { margin-top: 0; }
+	.bt-card textarea { width: 100%; box-sizing: border-box; font-family: monospace;
+		font-size: 12.5px; line-height: 1.5; border-radius: 10px; padding: 10px; }
+	.bt-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+	.bt-btn { border: none; border-radius: 999px; padding: 9px 18px; cursor: pointer;
+		font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--bt-g1), var(--bt-g2)); }
+	.bt-btn.bt-ghost { background: transparent; color: inherit; border: 1px solid rgba(127,127,127,.45); }
+	.bt-status { font-size: 13px; margin: 8px 0; min-height: 18px; }
+	.bt-errors { display: none; border: 1px solid rgba(200,60,60,.5); background: rgba(200,60,60,.08);
+		border-radius: 10px; padding: 10px 14px; font-size: 13px; margin: 8px 0; }
+	.bt-note { font-size: 12.5px; opacity: .75; }
+	.bt-badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 11.5px;
+		background: rgba(255,255,255,.18); margin-right: 6px; }
+</style>
+
+<div class="bt-wrap">
+	<div class="bt-hero">
+		<h2>Boundless Tools</h2>
+		<p>Kumpulan tools kecil. Tool pertama: Convert V2Ray.</p>
+	</div>
+
+	<div class="bt-card" id="tool-v2ray">
+		<h3>Convert V2Ray &rarr; Clash / Mihomo</h3>
+		<p>
+			<span class="bt-badge">vmess</span><span class="bt-badge">vless</span><span class="bt-badge">trojan</span>
+			<span class="bt-badge">ws</span><span class="bt-badge">grpc</span><span class="bt-badge">httpupgrade</span>
+			<span class="bt-badge">TLS &amp; nonTLS</span>
+		</p>
+		<p class="bt-note">Tempel link akun, <strong>satu link per baris</strong>. Hasilnya daftar entri
+		<code>proxies:</code> saja (tanpa header <code>proxies:</code>), siap ditempel ke config Mihomo.
+		Konversi berjalan 100% di browser — link tidak dikirim ke server dan tidak disimpan di STB.</p>
+
+		<label for="bt-in"><strong>Link akun</strong></label>
+		<textarea id="bt-in" rows="8" spellcheck="false"
+			placeholder="vmess://...&#10;vless://...&#10;trojan://..."></textarea>
+
+		<div class="bt-row">
+			<button type="button" class="bt-btn" id="bt-convert">Convert</button>
+			<button type="button" class="bt-btn bt-ghost" id="bt-clear">Bersihkan</button>
+		</div>
+
+		<div class="bt-status" id="bt-status"></div>
+		<div class="bt-errors" id="bt-errors"></div>
+
+		<label for="bt-out"><strong>Hasil YAML</strong></label>
+		<textarea id="bt-out" rows="12" readonly spellcheck="false"
+			placeholder="Hasil convert muncul di sini..."></textarea>
+
+		<div class="bt-row">
+			<button type="button" class="bt-btn" id="bt-copy">Salin</button>
+			<button type="button" class="bt-btn bt-ghost" id="bt-download">Download .yaml</button>
+		</div>
+		<p class="bt-note">Baris yang rusak ditandai nomor barisnya dan dilewati — baris lain tetap dikonversi.
+		Nama kosong diisi otomatis dari server:port, nama ganda diberi akhiran -2, -3, dst.</p>
+	</div>
+</div>
+
+<script type="text/javascript">
+// === CONVERTER START ===
+// Converter vmess/vless/trojan -> entri proxies Clash/Mihomo (list saja).
+// Murni string processing: tanpa jaringan, tanpa penyimpanan.
+
+function btSafeDecode(s) {
+	try { return decodeURIComponent(s); } catch (e) { return s; }
+}
+
+function btB64Decode(b64) {
+	var s = String(b64).replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+	while (s.length % 4) s += "=";
+	var bin = atob(s);
+	if (typeof TextDecoder !== "undefined") {
+		var bytes = new Uint8Array(bin.length);
+		for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+		return new TextDecoder("utf-8").decode(bytes);
+	}
+	return decodeURIComponent(escape(bin));
+}
+
+// Nilai YAML polos bila aman (termasuk emoji & uuid seperti contoh),
+// kalau tidak pakai kutip ganda gaya JSON.
+function btYaml(v) {
+	var s = String(v);
+	if (s === "") return '""';
+	var plain = !/^\s|\s$/.test(s) &&
+		!/^[-?:,\[\]{}#&*!|>'"%@`]/.test(s) &&
+		s.indexOf(": ") < 0 && s.indexOf(" #") < 0 &&
+		!/[\n\r\t]/.test(s) && s.charAt(s.length - 1) !== ":" &&
+		!/^(true|false|null|yes|no|on|off|~)$/i.test(s) &&
+		!/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(s);
+	return plain ? s : JSON.stringify(s);
+}
+
+function btQuery(qs) {
+	var out = {};
+	if (!qs) return out;
+	var sp = new URLSearchParams(qs);
+	sp.forEach(function (val, key) { out[key.toLowerCase()] = val; });
+	return out;
+}
+
+// Pecah link vless/trojan secara manual (tahan password/uuid apa adanya).
+function btParseUri(line) {
+	var m = line.match(/^([a-z0-9]+):\/\/([^/?#]*)([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/i);
+	if (!m) throw new Error("format link tidak dikenal");
+	var authority = m[2] || "";
+	var at = authority.lastIndexOf("@");
+	if (at < 0) throw new Error("bagian '@' tidak ditemukan");
+	var userinfo = btSafeDecode(authority.slice(0, at));
+	var hostport = authority.slice(at + 1);
+	var server = hostport, port = "";
+	var colon = hostport.lastIndexOf(":");
+	if (hostport.charAt(0) === "[") {
+		var close = hostport.indexOf("]");
+		server = hostport.slice(0, close + 1);
+		if (hostport.charAt(close + 1) === ":") port = hostport.slice(close + 2);
+		server = server.replace(/^\[|\]$/g, "");
+	} else if (colon >= 0) {
+		server = hostport.slice(0, colon);
+		port = hostport.slice(colon + 1);
+	}
+	return {
+		scheme: m[1].toLowerCase(),
+		userinfo: userinfo,
+		server: server,
+		port: port,
+		pathPart: m[3] || "",
+		query: btQuery(m[4] || ""),
+		name: btSafeDecode(m[5] || "")
+	};
+}
+
+function btPort(v, proto) {
+	var p = parseInt(v, 10);
+	if (!p || p < 1 || p > 65535) throw new Error(proto + ": port tidak valid");
+	return p;
+}
+
+function btBoolish(v) {
+	if (v === undefined || v === null || v === "") return null;
+	var s = String(v).toLowerCase();
+	if (s === "1" || s === "true" || s === "tls") return true;
+	if (s === "0" || s === "false" || s === "none" || s === "") return false;
+	return null;
+}
+
+// Baris transport bersama untuk ws / grpc / httpupgrade / h2 / tcp.
+// o = { network, host, path, serviceName }
+function btTransport(lines, o, warnings) {
+	var net = (o.network || "tcp").toLowerCase();
+	if (net === "websocket") net = "ws";
+	if (net === "tcp" || net === "") return;
+	if (net === "httpupgrade") {
+		lines.push("    network: ws");
+		lines.push("    ws-opts:");
+		lines.push("      path: " + btYaml(o.path || "/"));
+		lines.push("      v2ray-http-upgrade: true");
+		if (o.host) {
+			lines.push("      headers:");
+			lines.push("        Host: " + btYaml(o.host));
+		}
+		return;
+	}
+	if (net === "ws") {
+		lines.push("    network: ws");
+		lines.push("    ws-opts:");
+		lines.push("      path: " + btYaml(o.path || "/"));
+		if (o.host) {
+			lines.push("      headers:");
+			lines.push("        Host: " + btYaml(o.host));
+		}
+		return;
+	}
+	if (net === "grpc") {
+		lines.push("    network: grpc");
+		if (o.serviceName) {
+			lines.push("    grpc-opts:");
+			lines.push("      grpc-service-name: " + btYaml(o.serviceName));
+		}
+		return;
+	}
+	if (net === "h2" || net === "http") {
+		lines.push("    network: h2");
+		lines.push("    h2-opts:");
+		if (o.path) lines.push("      path: " + btYaml(o.path));
+		if (o.host) {
+			lines.push("      host:");
+			lines.push("        - " + btYaml(o.host));
+		}
+		return;
+	}
+	lines.push("    network: " + btYaml(net));
+	warnings.push("transport '" + net + "' diteruskan apa adanya (tanpa opts)");
+}
+
+function btAlpn(lines, alpn) {
+	if (!alpn) return;
+	var parts = String(alpn).split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+	if (!parts.length) return;
+	lines.push("    alpn:");
+	parts.forEach(function (p) { lines.push("      - " + btYaml(p)); });
+}
+
+function btReality(lines, q) {
+	var pbk = q.pbk || q["public-key"] || "";
+	if (!pbk) return;
+	lines.push("    reality-opts:");
+	lines.push("      public-key: " + btYaml(pbk));
+	if (q.sid || q["short-id"]) lines.push("      short-id: " + btYaml(q.sid || q["short-id"]));
+}
+
+function btConvertVmess(line, warnings) {
+	var raw = line.slice("vmess://".length).split("#")[0];
+	var j;
+	try { j = JSON.parse(btB64Decode(raw)); }
+	catch (e) { throw new Error("vmess: isi base64/JSON tidak bisa dibaca"); }
+	var server = j.add || "";
+	if (!server) throw new Error("vmess: server (add) kosong");
+	var port = btPort(j.port, "vmess");
+	if (!j.id) throw new Error("vmess: uuid (id) kosong");
+	var tlsFlag = btBoolish(j.tls);
+	var isTls = tlsFlag === true;
+	var host = j.host || "";
+	var name = j.ps || "";
+	var lines = [];
+	lines.push("  - name: " + btYaml(name || ("Vmess-" + server + "-" + port)));
+	lines.push("    type: vmess");
+	lines.push("    server: " + btYaml(server));
+	lines.push("    port: " + port);
+	lines.push("    uuid: " + btYaml(j.id));
+	lines.push("    alterId: " + (parseInt(j.aid, 10) || 0));
+	lines.push("    cipher: " + btYaml(j.scy || "auto"));
+	lines.push("    udp: true");
+	lines.push("    skip-cert-verify: true");
+	if (isTls) {
+		lines.push("    tls: true");
+		lines.push("    servername: " + btYaml(j.sni || host || server));
+	}
+	if (j.fp) lines.push("    client-fingerprint: " + btYaml(j.fp));
+	btAlpn(lines, j.alpn);
+	btTransport(lines, {
+		network: j.net || "tcp",
+		host: host,
+		path: j.path || "",
+		serviceName: j.servicename || j.serviceName || j.path || ""
+	}, warnings);
+	return { name: name || ("Vmess-" + server + "-" + port), yaml: lines.join("\n") };
+}
+
+function btConvertUri(line, warnings) {
+	var u = btParseUri(line);
+	var proto = u.scheme;
+	var q = u.query;
+	if (!u.server) throw new Error(proto + ": server kosong");
+	var port = btPort(u.port, proto);
+	var label = proto === "vless" ? "Vless" : "Trojan";
+	var name = u.name || (label + "-" + u.server + "-" + port);
+	var host = q.host || "";
+	var path = q.path ? btSafeDecode(q.path) : "";
+	var serviceName = q.servicename || q.serviceName || "";
+	var security = (q.security || "").toLowerCase();
+	var tlsOverride = btBoolish(q.tls);
+	var isTls, isReality = security === "reality";
+	if (tlsOverride !== null) isTls = tlsOverride;
+	else if (security) isTls = security !== "none";
+	else isTls = (proto === "trojan"); // trojan bawaan TLS; vless bawaan nonTLS
+	var lines = [];
+	lines.push("  - name: " + btYaml(name));
+	lines.push("    type: " + proto);
+	lines.push("    server: " + btYaml(u.server));
+	lines.push("    port: " + port);
+	if (proto === "vless") {
+		if (!u.userinfo) throw new Error("vless: uuid kosong");
+		lines.push("    uuid: " + btYaml(u.userinfo));
+		if (q.flow) lines.push("    flow: " + btYaml(q.flow));
+	} else {
+		if (!u.userinfo) throw new Error("trojan: password kosong");
+		lines.push("    password: " + btYaml(u.userinfo));
+	}
+	lines.push("    udp: true");
+	lines.push("    skip-cert-verify: true");
+	if (proto === "vless") {
+		if (isTls || isReality) {
+			lines.push("    tls: true");
+			lines.push("    servername: " + btYaml(q.sni || host || u.server));
+		}
+	} else {
+		// Mihomo trojan tidak punya field tls: TLS ditandai lewat sni.
+		// nonTLS -> sni dihilangkan.
+		if (isTls || isReality) {
+			lines.push("    sni: " + btYaml(q.sni || q.peer || host || u.server));
+		}
+	}
+	if (q.fp) lines.push("    client-fingerprint: " + btYaml(q.fp));
+	if (isReality) btReality(lines, q);
+	btAlpn(lines, q.alpn);
+	btTransport(lines, {
+		network: q.type || "tcp",
+		host: host,
+		path: path,
+		serviceName: serviceName
+	}, warnings);
+	return { name: name, yaml: lines.join("\n") };
+}
+
+// Convert banyak baris. Return { yaml, ok, errors:[{line,msg}], warnings:[..] }
+function btConvertAll(text) {
+	var rawLines = String(text || "").split(/\r?\n/);
+	var out = [], errors = [], warnings = [];
+	var used = {};
+	rawLines.forEach(function (rawLine, idx) {
+		var line = rawLine.trim();
+		if (!line) return;
+		try {
+			var r;
+			var w = [];
+			if (/^vmess:\/\//i.test(line)) r = btConvertVmess(line, w);
+			else if (/^(vless|trojan):\/\//i.test(line)) r = btConvertUri(line, w);
+			else throw new Error("bukan link vmess/vless/trojan");
+			w.forEach(function (x) { warnings.push("Baris " + (idx + 1) + ": " + x); });
+			var nm = r.name, base = nm, n = 2;
+			while (used[nm]) { nm = base + "-" + n; n++; }
+			used[nm] = true;
+			if (nm !== r.name) {
+				r.yaml = r.yaml.replace(/^  - name: .*$/m,
+					"  - name: " + btYaml(nm));
+			}
+			out.push(r.yaml);
+		} catch (e) {
+			errors.push({ line: idx + 1, msg: e.message || String(e) });
+		}
+	});
+	return { yaml: out.join("\n"), ok: out.length, errors: errors, warnings: warnings };
+}
+// === CONVERTER END ===
+</script>
+
+<script type="text/javascript">
+(function () {
+	var elIn = document.getElementById("bt-in");
+	var elOut = document.getElementById("bt-out");
+	var elStatus = document.getElementById("bt-status");
+	var elErrors = document.getElementById("bt-errors");
+
+	document.getElementById("bt-convert").addEventListener("click", function () {
+		var res = btConvertAll(elIn.value);
+		elOut.value = res.yaml;
+		var msg = res.ok ? ("Berhasil: " + res.ok + " akun dikonversi.") : "Tidak ada akun yang berhasil dikonversi.";
+		if (res.warnings.length) msg += " Peringatan: " + res.warnings.join("; ");
+		elStatus.textContent = msg;
+		if (res.errors.length) {
+			elErrors.style.display = "block";
+			elErrors.innerHTML = "";
+			var head = document.createElement("strong");
+			head.textContent = "Baris bermasalah (dilewati):";
+			elErrors.appendChild(head);
+			res.errors.forEach(function (er) {
+				var d = document.createElement("div");
+				d.textContent = "Baris " + er.line + ": " + er.msg;
+				elErrors.appendChild(d);
+			});
+		} else {
+			elErrors.style.display = "none";
+			elErrors.innerHTML = "";
+		}
+	});
+
+	document.getElementById("bt-clear").addEventListener("click", function () {
+		elIn.value = ""; elOut.value = ""; elStatus.textContent = "";
+		elErrors.style.display = "none"; elErrors.innerHTML = "";
+		elIn.focus();
+	});
+
+	document.getElementById("bt-copy").addEventListener("click", function () {
+		if (!elOut.value) { elStatus.textContent = "Belum ada hasil untuk disalin."; return; }
+		function done() { elStatus.textContent = "Hasil disalin ke clipboard."; }
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(elOut.value).then(done, function () {
+				elOut.select(); document.execCommand("copy"); done();
+			});
+		} else {
+			elOut.select(); document.execCommand("copy"); done();
+		}
+	});
+
+	document.getElementById("bt-download").addEventListener("click", function () {
+		if (!elOut.value) { elStatus.textContent = "Belum ada hasil untuk diunduh."; return; }
+		var blob = new Blob([elOut.value + "\n"], { type: "text/yaml" });
+		var a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = "boundless-tools-proxies.yaml";
+		document.body.appendChild(a); a.click();
+		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+	});
+})();
+</script>
+<%+footer%>
